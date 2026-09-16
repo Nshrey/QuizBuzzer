@@ -325,7 +325,7 @@ function App() {
   // -------------------------
 
   return (
-    <main className={`page player-page ${winner ? "round-locked" : ""}`}>
+    <main className={`page player-page ${roundLocked ? "round-locked" : ""}`}>
       <header className="player-header">
         <div className="mini-brand">
           <div>F</div>
@@ -338,7 +338,7 @@ function App() {
         </div>
       </header>
 
-      {!winner ? (
+      {!roundLocked ? (
         <section className="buzzer-area">
           <div className="player-greeting">
             <span className="soft-label">ROUND READY</span>
