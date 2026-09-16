@@ -3,6 +3,15 @@ import { io } from "socket.io-client";
 import "./App.css";
 
 const socket = io("https://quizbuzzerserver.onrender.com");
+function Watermark() {
+  return (
+    <div className="watermark">
+      Built by <strong>Shrey</strong>
+      <span className="watermark-x">×</span>
+      <strong>Nova</strong>
+    </div>
+  );
+}
 
 function App() {
   const isAdmin = window.location.pathname === "/admin";
@@ -335,6 +344,7 @@ function App() {
           </div>
         </section>
       )}
+        <Watermark />
     </main>
   );
 }
