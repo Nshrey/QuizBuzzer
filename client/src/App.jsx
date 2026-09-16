@@ -22,6 +22,8 @@ function App() {
   );
   const [winner, setWinner] = useState(null);
   const [players, setPlayers] = useState([]);
+  const [buzzOrder, setBuzzOrder] = useState([]);
+  const [roundLocked, setRoundLocked] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
 
   // -------------------------
@@ -31,21 +33,36 @@ function App() {
   useEffect(() => {
     const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
-    const onWinner = (winnerName) => setWinner(winnerName);
-    const onReset = () => setWinner(null);
-    const onPlayers = (playerList) => setPlayers(playerList);
-
+  
+    const onRoundState = (state) => {
+      setRoundLocked(state.locked);
+    };
+  
+    const onAdminWinner = (winnerName) => {
+      setWinner(winnerName);
+    };
+  
+    const onBuzzOrder = (order) => {
+      setBuzzOrder(order);
+    };
+  
+    const onPlayers = (playerList) => {
+      setPlayers(playerList);
+    };
+  
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
-    socket.on("winner", onWinner);
-    socket.on("reset", onReset);
+    socket.on("roundState", onRoundState);
+    socket.on("adminWinner", onAdminWinner);
+    socket.on("buzzOrder", onBuzzOrder);
     socket.on("players", onPlayers);
-
+  
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
-      socket.off("winner", onWinner);
-      socket.off("reset", onReset);
+      socket.off("roundState", onRoundState);
+      socket.off("adminWinner", onAdminWinner);
+      socket.off("buzzOrder", onBuzzOrder);
       socket.off("players", onPlayers);
     };
   }, []);
@@ -104,12 +121,12 @@ function App() {
   };
 
   const buzz = () => {
-    if (!playerName || winner || !connected) return;
-
+    if (!playerName || roundLocked || !connected) return;
+  
     if (navigator.vibrate) {
       navigator.vibrate(40);
     }
-
+  
     socket.emit("buzz");
   };
 
@@ -208,18 +225,49 @@ function App() {
 
               <h1>{winner}</h1>
 
-              <p>was first on the buzzer</p>
+<p>was first on the buzzer</p>
 
-              <button
-                className="next-round"
-                onClick={() => socket.emit("reset")}
-              >
-                Next round
-                <span>→</span>
-              </button>
+{buzzOrder.length > 0 && (
+  <div className="buzz-order">
+    <div className="buzz-order-heading">
+      <span>BUZZ ORDER</span>
+      <span>SERVER TIME</span>
+    </div>
+
+    {buzzOrder.map((buzz, index) => (
+      <div
+        className={`buzz-order-row ${index === 0 ? "first" : ""}`}
+        key={buzz.socketId}
+      >
+        <div className="buzz-position">
+          {index + 1}
+        </div>
+
+        <div className="buzz-player">
+          <strong>{buzz.player}</strong>
+
+          {index === 0 && <span>First</span>}
+        </div>
+
+        <div className="buzz-time">
+          {index === 0 ? "0 ms" : `+${buzz.offsetMs} ms`}
+        </div>
+      </div>
+    ))}
+  </div>
+)}
+
+<button
+  className="next-round"
+  onClick={() => socket.emit("reset")}
+>
+  Next round
+  <span>→</span>
+</button>
             </div>
           )}
         </section>
+        <Watermark />
       </main>
     );
   }

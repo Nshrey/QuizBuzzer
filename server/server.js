@@ -6,16 +6,20 @@ const app = express();
 const server = createServer(app);
 
 const io = new Server(server, {
-    cors: {
-      origin: [
-        "http://localhost:5173",
-        "https://quiz-buzzer-steel.vercel.app",
-      ],
-    },
-  });
-let winner = null;
-let adminSocketId = null;
+  cors: {
+    origin: [
+      "http://localhost:5173",
+      "https://quiz-buzzer-steel.vercel.app",
+    ],
+  },
+});
 
+let winner = null;
+
+// Stores every buzz received during the current round
+let buzzes = [];
+
+// socket.id -> player name
 const players = new Map();
 
 function sendPlayers() {
@@ -23,18 +27,47 @@ function sendPlayers() {
   io.emit("players", [...players.values()]);
 }
 
+function sendBuzzOrder() {
+  // IMPORTANT:
+  // Only admins receive detailed buzz information.
+  for (const [socketId, socket] of io.sockets.sockets) {
+    if (socket.isAdmin) {
+      socket.emit("buzzOrder", buzzes);
+    }
+  }
+}
+
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
   socket.emit("players", [...players.values()]);
-  socket.emit("winner", winner);
 
-  socket.on("admin", () => {
-    adminSocketId = socket.id;
-    console.log("Admin connected:", socket.id);
+  // Players only need to know whether the round is locked.
+  socket.emit("roundState", {
+    locked: winner !== null,
   });
 
+  // -------------------------
+  // ADMIN
+  // -------------------------
+
+  socket.on("admin", () => {
+    socket.isAdmin = true;
+
+    console.log("Admin connected:", socket.id);
+
+    // Admin receives the actual winner and audit trail.
+    socket.emit("adminWinner", winner);
+    socket.emit("buzzOrder", buzzes);
+  });
+
+  // -------------------------
+  // PLAYER JOIN
+  // -------------------------
+
   socket.on("join", (playerName) => {
+    if (typeof playerName !== "string") return;
+
     const name = playerName.trim();
 
     if (!name) return;
@@ -46,39 +79,113 @@ io.on("connection", (socket) => {
     sendPlayers();
   });
 
+  // -------------------------
+  // BUZZ
+  // -------------------------
+
   socket.on("buzz", () => {
     const playerName = players.get(socket.id);
-  
-    console.log(
-      "Buzz received:",
-      socket.id,
-      "player:",
-      playerName,
-      "current winner:",
-      winner
+
+    if (!playerName) return;
+
+    // Each socket can only buzz once per round
+    const alreadyBuzzed = buzzes.some(
+      (buzz) => buzz.socketId === socket.id
     );
-  
-    if (!playerName || winner !== null) return;
-  
-    winner = playerName;
-  
-    console.log("Winner:", winner);
-  
-    io.emit("winner", winner);
+
+    if (alreadyBuzzed) return;
+
+    const timestamp = process.hrtime.bigint();
+
+    // First buzz starts the round clock
+    if (buzzes.length === 0) {
+      winner = playerName;
+
+      buzzes.push({
+        socketId: socket.id,
+        player: playerName,
+        offsetMs: 0,
+        timestamp: timestamp.toString(),
+      });
+
+      console.log(`Winner: ${playerName}`);
+
+      // Tell everybody the round is locked.
+      // Winner identity is NOT included.
+      io.emit("roundState", {
+        locked: true,
+      });
+
+      // Winner identity goes only to admins.
+      for (const [, connectedSocket] of io.sockets.sockets) {
+        if (connectedSocket.isAdmin) {
+          connectedSocket.emit("adminWinner", winner);
+        }
+      }
+
+      sendBuzzOrder();
+
+      return;
+    }
+
+    // -------------------------
+    // LATER BUZZES
+    // -------------------------
+
+    const firstTimestamp = BigInt(buzzes[0].timestamp);
+
+    const differenceNs = timestamp - firstTimestamp;
+
+    const offsetMs =
+      Number(differenceNs) / 1_000_000;
+
+    buzzes.push({
+      socketId: socket.id,
+      player: playerName,
+      offsetMs: Math.round(offsetMs),
+      timestamp: timestamp.toString(),
+    });
+
+    console.log(
+      `Buzz: ${playerName} +${Math.round(offsetMs)}ms`
+    );
+
+    sendBuzzOrder();
   });
 
+  // -------------------------
+  // RESET
+  // -------------------------
+
   socket.on("reset", () => {
-    if (socket.id !== adminSocketId) {
-      console.log("Unauthorized reset attempt:", socket.id);
+    if (!socket.isAdmin) {
+      console.log(
+        "Unauthorized reset attempt:",
+        socket.id
+      );
       return;
     }
 
     winner = null;
+    buzzes = [];
 
-    io.emit("reset");
+    io.emit("roundState", {
+      locked: false,
+    });
+
+    for (const [, connectedSocket] of io.sockets.sockets) {
+      if (connectedSocket.isAdmin) {
+        connectedSocket.emit("adminWinner", null);
+        connectedSocket.emit("buzzOrder", []);
+      }
+    }
 
     console.log("Round reset");
   });
+
+  // -------------------------
+  // DISCONNECT
+  // -------------------------
 
   socket.on("disconnect", () => {
     const playerName = players.get(socket.id);
@@ -88,11 +195,6 @@ io.on("connection", (socket) => {
     if (playerName) {
       console.log("Player disconnected:", playerName);
       sendPlayers();
-    }
-
-    if (socket.id === adminSocketId) {
-      adminSocketId = null;
-      console.log("Admin disconnected");
     }
   });
 });
