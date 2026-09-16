@@ -2,16 +2,19 @@ import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import "./App.css";
 
-const socket = io("http://localhost:3000");
+const socket = io("https://quizbuzzerserver.onrender.com");
 
 function App() {
   const isAdmin = window.location.pathname === "/admin";
 
   const [name, setName] = useState("");
-  const [playerName, setPlayerName] = useState("");
+  const [playerName, setPlayerName] = useState(
+    sessionStorage.getItem("playerName") || ""
+  );
   const [winner, setWinner] = useState(null);
   const [players, setPlayers] = useState([]);
 
+  // Listen for game events
   useEffect(() => {
     const onWinner = (winnerName) => setWinner(winnerName);
     const onReset = () => setWinner(null);
@@ -28,6 +31,44 @@ function App() {
     };
   }, []);
 
+  // Register admin and re-register after reconnect
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const registerAdmin = () => {
+      socket.emit("admin");
+    };
+
+    if (socket.connected) {
+      registerAdmin();
+    }
+
+    socket.on("connect", registerAdmin);
+
+    return () => {
+      socket.off("connect", registerAdmin);
+    };
+  }, [isAdmin]);
+
+  // Re-register player after refresh/reconnect
+  useEffect(() => {
+    if (isAdmin || !playerName) return;
+
+    const registerPlayer = () => {
+      socket.emit("join", playerName);
+    };
+
+    if (socket.connected) {
+      registerPlayer();
+    }
+
+    socket.on("connect", registerPlayer);
+
+    return () => {
+      socket.off("connect", registerPlayer);
+    };
+  }, [isAdmin, playerName]);
+
   const join = (e) => {
     e.preventDefault();
 
@@ -35,7 +76,9 @@ function App() {
 
     if (!cleanName) return;
 
+    sessionStorage.setItem("playerName", cleanName);
     setPlayerName(cleanName);
+
     socket.emit("join", cleanName);
   };
 
@@ -67,7 +110,8 @@ function App() {
             )}
 
             <p className="player-count">
-              {players.length} PLAYER{players.length !== 1 ? "S" : ""} CONNECTED
+              {players.length} PLAYER
+              {players.length !== 1 ? "S" : ""} CONNECTED
             </p>
           </div>
         )}
