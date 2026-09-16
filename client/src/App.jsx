@@ -162,44 +162,34 @@ function App() {
     );
   }
 
-  const didWin = winner === playerName;
+  
 
   return (
     <main className="player">
       <p className="player-name">{playerName}</p>
-
       {!winner ? (
-        <>
-          <button
-            className="buzz-button"
-            onClick={buzz}
-          >
-            BUZZ!
-          </button>
+  <>
+    <button
+      className="buzz-button"
+      onClick={buzz}
+    >
+      BUZZ!
+    </button>
 
-          <p className="status ready">
-            ● READY
-          </p>
-        </>
-      ) : didWin ? (
-        <div className="result">
-          <div className="trophy">🏆</div>
+    <p className="status ready">
+      ● READY
+    </p>
+  </>
+) : (
+  <div className="result">
+    <div className="lock">🔒</div>
 
-          <h1>YOU'RE FIRST!</h1>
+    <h1>LOCKED</h1>
 
-          <p>Wait for the question master.</p>
-        </div>
-      ) : (
-        <div className="result">
-          <div className="lock">🔒</div>
+    <p>Wait for the quizmaster</p>
+  </div>
+)}
 
-          <h1>LOCKED</h1>
-
-          <p>
-            <strong>{winner}</strong> buzzed first
-          </p>
-        </div>
-      )}
     </main>
   );
 }
