@@ -25,6 +25,7 @@ io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
   socket.emit("players", [...players.values()]);
+  socket.emit("winner", winner);
 
   socket.on("admin", () => {
     adminSocketId = socket.id;
@@ -45,13 +46,22 @@ io.on("connection", (socket) => {
 
   socket.on("buzz", () => {
     const playerName = players.get(socket.id);
-
+  
+    console.log(
+      "Buzz received:",
+      socket.id,
+      "player:",
+      playerName,
+      "current winner:",
+      winner
+    );
+  
     if (!playerName || winner !== null) return;
-
+  
     winner = playerName;
-
+  
     console.log("Winner:", winner);
-
+  
     io.emit("winner", winner);
   });
 
