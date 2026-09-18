@@ -3,6 +3,7 @@ import { io } from "socket.io-client";
 import "./App.css";
 
 const socket = io("https://quizbuzzerserver.onrender.com");
+
 function Watermark() {
   return (
     <div className="watermark">
@@ -17,46 +18,64 @@ function App() {
   const isAdmin = window.location.pathname === "/admin";
 
   const [name, setName] = useState("");
+
   const [playerName, setPlayerName] = useState(
     sessionStorage.getItem("playerName") || ""
   );
+
   const [winner, setWinner] = useState(null);
   const [players, setPlayers] = useState([]);
   const [buzzOrder, setBuzzOrder] = useState([]);
   const [roundLocked, setRoundLocked] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
 
-  // -------------------------
+  // Admin authentication
+  const [adminCode, setAdminCode] = useState("");
+  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
+  const [adminError, setAdminError] = useState("");
+
+  // ------------------------------------------------
   // SOCKET EVENTS
-  // -------------------------
+  // ------------------------------------------------
 
   useEffect(() => {
-    const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
-  
+    const onConnect = () => {
+      setConnected(true);
+    };
+
+    const onDisconnect = () => {
+      setConnected(false);
+
+      // A reconnect creates a new socket.
+      // Require the admin to authenticate again.
+      if (isAdmin) {
+        setAdminAuthenticated(false);
+      }
+    };
+
     const onRoundState = (state) => {
       setRoundLocked(state.locked);
     };
-  
+
     const onAdminWinner = (winnerName) => {
       setWinner(winnerName);
     };
-  
+
     const onBuzzOrder = (order) => {
       setBuzzOrder(order);
     };
-  
+
     const onPlayers = (playerList) => {
       setPlayers(playerList);
     };
-  
+
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("roundState", onRoundState);
     socket.on("adminWinner", onAdminWinner);
     socket.on("buzzOrder", onBuzzOrder);
     socket.on("players", onPlayers);
-  
+
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
@@ -65,28 +84,12 @@ function App() {
       socket.off("buzzOrder", onBuzzOrder);
       socket.off("players", onPlayers);
     };
-  }, []);
-
-  // Admin registration
-  useEffect(() => {
-    if (!isAdmin) return;
-
-    const registerAdmin = () => {
-      socket.emit("admin");
-    };
-
-    if (socket.connected) {
-      registerAdmin();
-    }
-
-    socket.on("connect", registerAdmin);
-
-    return () => {
-      socket.off("connect", registerAdmin);
-    };
   }, [isAdmin]);
 
-  // Player registration / reconnection
+  // ------------------------------------------------
+  // PLAYER REGISTRATION / RECONNECTION
+  // ------------------------------------------------
+
   useEffect(() => {
     if (isAdmin || !playerName) return;
 
@@ -105,9 +108,9 @@ function App() {
     };
   }, [isAdmin, playerName]);
 
-  // -------------------------
-  // ACTIONS
-  // -------------------------
+  // ------------------------------------------------
+  // PLAYER JOIN
+  // ------------------------------------------------
 
   const join = (e) => {
     e.preventDefault();
@@ -117,39 +120,180 @@ function App() {
     if (!cleanName) return;
 
     sessionStorage.setItem("playerName", cleanName);
+
     setPlayerName(cleanName);
   };
 
+  // ------------------------------------------------
+  // PLAYER BUZZ
+  // ------------------------------------------------
+
   const buzz = () => {
-    if (!playerName || roundLocked || !connected) return;
-  
+    if (!playerName || roundLocked || !connected) {
+      return;
+    }
+
     if (navigator.vibrate) {
       navigator.vibrate(40);
     }
-  
+
     socket.emit("buzz");
   };
 
-  // -------------------------
+  // ------------------------------------------------
+  // ADMIN LOGIN
+  // ------------------------------------------------
+
+  const loginAdmin = (e) => {
+    e.preventDefault();
+
+    if (!connected) {
+      setAdminError("Game server is not connected");
+      return;
+    }
+
+    if (!adminCode.trim()) {
+      setAdminError("Enter the access code");
+      return;
+    }
+
+    setAdminError("");
+
+    socket.emit("admin", adminCode, (response) => {
+      if (response?.success) {
+        setAdminAuthenticated(true);
+        setAdminCode("");
+        setAdminError("");
+      } else {
+        setAdminAuthenticated(false);
+        setAdminError("Incorrect access code");
+      }
+    });
+  };
+
+  // ================================================================
   // ADMIN
-  // -------------------------
+  // ================================================================
 
   if (isAdmin) {
+    // ------------------------------------------------
+    // ADMIN LOGIN SCREEN
+    // ------------------------------------------------
+
+    if (!adminAuthenticated) {
+      return (
+        <main className="page join-page">
+          <div className="decor decor-one" />
+          <div className="decor decor-two" />
+
+          <section className="join-card">
+            <div className="join-logo">F</div>
+
+            <span className="soft-label">
+              QUIZ CONTROL
+            </span>
+
+            <h1>Admin access</h1>
+
+            <p className="join-description">
+              Enter the access code to open quiz control.
+            </p>
+
+            <form onSubmit={loginAdmin}>
+              <label htmlFor="admin-code">
+                Access code
+              </label>
+
+              <input
+                id="admin-code"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoFocus
+                autoComplete="off"
+                placeholder="••••"
+                maxLength={4}
+                value={adminCode}
+                onChange={(e) => {
+                  const value = e.target.value.replace(
+                    /\D/g,
+                    ""
+                  );
+
+                  setAdminCode(value);
+                  setAdminError("");
+                }}
+              />
+
+              {adminError && (
+                <p className="admin-login-error">
+                  {adminError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={!connected}
+              >
+                {connected
+                  ? "Open quiz control"
+                  : "Connecting..."}
+
+                <span>→</span>
+              </button>
+            </form>
+
+            <div
+              className={`join-status ${
+                connected ? "" : "disconnected"
+              }`}
+            >
+              <span />
+
+              {connected
+                ? "Game server connected"
+                : "Connecting to game server"}
+            </div>
+          </section>
+
+          <Watermark />
+        </main>
+      );
+    }
+
+    // ------------------------------------------------
+    // ADMIN DASHBOARD
+    // ------------------------------------------------
+
     return (
       <main className="page admin-page">
         <header className="topbar">
           <div className="brand">
-            <div className="brand-mark">F</div>
+            <div className="brand-mark">
+              F
+            </div>
 
             <div>
-              <strong>Fastest Finger</strong>
-              <span>Quiz control</span>
+              <strong>
+                Fastest Finger
+              </strong>
+
+              <span>
+                Quiz control
+              </span>
             </div>
           </div>
 
-          <div className={`connection ${connected ? "online" : "offline"}`}>
+          <div
+            className={`connection ${
+              connected ? "online" : "offline"
+            }`}
+          >
             <span />
-            {connected ? "Live" : "Connecting"}
+
+            {connected
+              ? "Live"
+              : "Connecting"}
           </div>
         </header>
 
@@ -157,20 +301,30 @@ function App() {
           {!winner ? (
             <>
               <div className="admin-heading">
-                <span className="soft-label">ROUND READY</span>
+                <span className="soft-label">
+                  ROUND READY
+                </span>
 
-                <h1>Ready for the next question?</h1>
+                <h1>
+                  Ready for the next question?
+                </h1>
 
                 <p>
-                  Everyone is connected. The first buzz will appear here.
+                  Everyone is connected. The first
+                  buzz will appear here.
                 </p>
               </div>
 
               <div className="players-card">
                 <div className="card-heading">
                   <div>
-                    <span className="soft-label">PLAYERS</span>
-                    <h2>Connected players</h2>
+                    <span className="soft-label">
+                      PLAYERS
+                    </span>
+
+                    <h2>
+                      Connected players
+                    </h2>
                   </div>
 
                   <div className="count-badge">
@@ -181,27 +335,44 @@ function App() {
                 <div className="player-list">
                   {players.length === 0 ? (
                     <div className="empty-state">
-                      <div className="empty-icon">○</div>
-                      <p>Waiting for players to join</p>
+                      <div className="empty-icon">
+                        ○
+                      </div>
+
+                      <p>
+                        Waiting for players to join
+                      </p>
                     </div>
                   ) : (
-                    players.map((player, index) => (
-                      <div className="admin-player" key={`${player}-${index}`}>
-                        <div className="player-avatar">
-                          {player.charAt(0).toUpperCase()}
-                        </div>
+                    players.map(
+                      (player, index) => (
+                        <div
+                          className="admin-player"
+                          key={`${player}-${index}`}
+                        >
+                          <div className="player-avatar">
+                            {player
+                              .charAt(0)
+                              .toUpperCase()}
+                          </div>
 
-                        <div className="player-details">
-                          <strong>{player}</strong>
-                          <span>Ready to buzz</span>
-                        </div>
+                          <div className="player-details">
+                            <strong>
+                              {player}
+                            </strong>
 
-                        <div className="ready-pill">
-                          <span />
-                          Ready
+                            <span>
+                              Ready to buzz
+                            </span>
+                          </div>
+
+                          <div className="ready-pill">
+                            <span />
+                            Ready
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      )
+                    )
                   )}
                 </div>
               </div>
@@ -212,69 +383,110 @@ function App() {
                 </div>
 
                 <div>
-                  <strong>Listening for a buzz</strong>
-                  <p>The round will lock automatically.</p>
+                  <strong>
+                    Listening for a buzz
+                  </strong>
+
+                  <p>
+                    The round will lock
+                    automatically.
+                  </p>
                 </div>
               </div>
             </>
           ) : (
-            <div className="winner-screen">
-              <div className="winner-symbol">✓</div>
+            // ------------------------------------------------
+            // WINNER SCREEN
+            // ------------------------------------------------
 
-              <span className="soft-label">FIRST BUZZ</span>
+            <div className="winner-screen">
+              <div className="winner-symbol">
+                ✓
+              </div>
+
+              <span className="soft-label">
+                FIRST BUZZ
+              </span>
 
               <h1>{winner}</h1>
 
-<p>was first on the buzzer</p>
+              <p>
+                was first on the buzzer
+              </p>
 
-{buzzOrder.length > 0 && (
-  <div className="buzz-order">
-    <div className="buzz-order-heading">
-      <span>BUZZ ORDER</span>
-      <span>SERVER TIME</span>
-    </div>
+              {buzzOrder.length > 0 && (
+                <div className="buzz-order">
+                  <div className="buzz-order-heading">
+                    <span>
+                      BUZZ ORDER
+                    </span>
 
-    {buzzOrder.map((buzz, index) => (
-      <div
-        className={`buzz-order-row ${index === 0 ? "first" : ""}`}
-        key={buzz.socketId}
-      >
-        <div className="buzz-position">
-          {index + 1}
-        </div>
+                    <span>
+                      SERVER TIME
+                    </span>
+                  </div>
 
-        <div className="buzz-player">
-          <strong>{buzz.player}</strong>
+                  {buzzOrder.map(
+                    (buzzItem, index) => (
+                      <div
+                        className={`buzz-order-row ${
+                          index === 0
+                            ? "first"
+                            : ""
+                        }`}
+                        key={
+                          buzzItem.socketId
+                        }
+                      >
+                        <div className="buzz-position">
+                          {index + 1}
+                        </div>
 
-          {index === 0 && <span>First</span>}
-        </div>
+                        <div className="buzz-player">
+                          <strong>
+                            {buzzItem.player}
+                          </strong>
 
-        <div className="buzz-time">
-          {index === 0 ? "0 ms" : `+${buzz.offsetMs} ms`}
-        </div>
-      </div>
-    ))}
-  </div>
-)}
+                          {index === 0 && (
+                            <span>
+                              First
+                            </span>
+                          )}
+                        </div>
 
-<button
-  className="next-round"
-  onClick={() => socket.emit("reset")}
->
-  Next round
-  <span>→</span>
-</button>
+                        <div className="buzz-time">
+                          {index === 0
+                            ? "0 ms"
+                            : `+${buzzItem.offsetMs} ms`}
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              <button
+                className="next-round"
+                onClick={() =>
+                  socket.emit("reset")
+                }
+              >
+                Next round
+
+                <span>→</span>
+              </button>
             </div>
           )}
         </section>
+
         <Watermark />
       </main>
     );
   }
 
-  // -------------------------
-  // JOIN
-  // -------------------------
+  // ================================================================
+  // PLAYER JOIN SCREEN
+  // ================================================================
 
   if (!playerName) {
     return (
@@ -283,18 +495,27 @@ function App() {
         <div className="decor decor-two" />
 
         <section className="join-card">
-          <div className="join-logo">F</div>
+          <div className="join-logo">
+            F
+          </div>
 
-          <span className="soft-label">FASTEST FINGER</span>
+          <span className="soft-label">
+            FASTEST FINGER
+          </span>
 
-          <h1>Ready to play?</h1>
+          <h1>
+            Ready to play?
+          </h1>
 
           <p className="join-description">
-            Enter your name and get ready for the next question.
+            Enter your name and get ready
+            for the next question.
           </p>
 
           <form onSubmit={join}>
-            <label htmlFor="player-name">Your name</label>
+            <label htmlFor="player-name">
+              Your name
+            </label>
 
             <input
               id="player-name"
@@ -302,7 +523,9 @@ function App() {
               autoComplete="off"
               placeholder="e.g. Shrey"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) =>
+                setName(e.target.value)
+              }
             />
 
             <button type="submit">
@@ -311,39 +534,78 @@ function App() {
             </button>
           </form>
 
-          <div className={`join-status ${connected ? "" : "disconnected"}`}>
+          <div
+            className={`join-status ${
+              connected
+                ? ""
+                : "disconnected"
+            }`}
+          >
             <span />
-            {connected ? "Game server connected" : "Connecting to game server"}
+
+            {connected
+              ? "Game server connected"
+              : "Connecting to game server"}
           </div>
         </section>
+
+        <Watermark />
       </main>
     );
   }
 
-  // -------------------------
+  // ================================================================
   // PLAYER
-  // -------------------------
+  // ================================================================
 
   return (
-    <main className={`page player-page ${roundLocked ? "round-locked" : ""}`}>
+    <main
+      className={`page player-page ${
+        roundLocked
+          ? "round-locked"
+          : ""
+      }`}
+    >
       <header className="player-header">
         <div className="mini-brand">
-          <div>F</div>
-          <span>Fastest Finger</span>
+          <div>
+            F
+          </div>
+
+          <span>
+            Fastest Finger
+          </span>
         </div>
 
         <div className="player-identity">
-          <span>Playing as</span>
-          <strong>{playerName}</strong>
+          <span>
+            Playing as
+          </span>
+
+          <strong>
+            {playerName}
+          </strong>
         </div>
       </header>
 
       {!roundLocked ? (
+        // ------------------------------------------------
+        // BUZZER
+        // ------------------------------------------------
+
         <section className="buzzer-area">
           <div className="player-greeting">
-            <span className="soft-label">ROUND READY</span>
-            <h1>Know the answer?</h1>
-            <p>Be the first to hit the buzzer.</p>
+            <span className="soft-label">
+              ROUND READY
+            </span>
+
+            <h1>
+              Know the answer?
+            </h1>
+
+            <p>
+              Be the first to hit the buzzer.
+            </p>
           </div>
 
           <div className="buzzer-shell">
@@ -353,14 +615,25 @@ function App() {
                 onClick={buzz}
                 disabled={!connected}
               >
-                <span>BUZZ</span>
+                <span>
+                  BUZZ
+                </span>
               </button>
             </div>
           </div>
 
-          <div className={`armed-status ${connected ? "" : "disconnected"}`}>
+          <div
+            className={`armed-status ${
+              connected
+                ? ""
+                : "disconnected"
+            }`}
+          >
             <span />
-            {connected ? "Ready to buzz" : "Reconnecting…"}
+
+            {connected
+              ? "Ready to buzz"
+              : "Reconnecting…"}
           </div>
 
           <p className="buzzer-hint">
@@ -368,14 +641,24 @@ function App() {
           </p>
         </section>
       ) : (
+        // ------------------------------------------------
+        // LOCKED
+        // ------------------------------------------------
+
         <section className="locked-screen">
           <div className="received-icon">
-            <span>✓</span>
+            <span>
+              ✓
+            </span>
           </div>
 
-          <span className="soft-label">BUZZ RECEIVED</span>
+          <span className="soft-label">
+            BUZZ RECEIVED
+          </span>
 
-          <h1>Round locked</h1>
+          <h1>
+            Round locked
+          </h1>
 
           <p>
             The quizmaster has the result.
@@ -392,7 +675,8 @@ function App() {
           </div>
         </section>
       )}
-        <Watermark />
+
+      <Watermark />
     </main>
   );
 }

@@ -1143,3 +1143,11 @@ button {
   margin: 0 1px;
   color: #c1bfb8;
 }
+.admin-login-error {
+  margin: 10px 2px 0;
+
+  color: var(--coral);
+
+  font-size: 12px;
+  font-weight: 600;
+}

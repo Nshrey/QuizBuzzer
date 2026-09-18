@@ -51,14 +51,27 @@ io.on("connection", (socket) => {
   // ADMIN
   // -------------------------
 
-  socket.on("admin", () => {
+  socket.on("admin", (code, callback) => {
+    if (code !== "5642") {
+      console.log("Invalid admin login attempt:", socket.id);
+  
+      if (callback) {
+        callback({ success: false });
+      }
+  
+      return;
+    }
+  
     socket.isAdmin = true;
-
-    console.log("Admin connected:", socket.id);
-
-    // Admin receives the actual winner and audit trail.
+  
+    console.log("Admin authenticated:", socket.id);
+  
     socket.emit("adminWinner", winner);
     socket.emit("buzzOrder", buzzes);
+  
+    if (callback) {
+      callback({ success: true });
+    }
   });
 
   // -------------------------
